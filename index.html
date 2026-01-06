@@ -25,6 +25,26 @@
             line-height: 1.5;
         }
 
+        /* ========== LOADING SPINNER STYLES ========== */
+        #loadingOverlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 10000;
+            display: none;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { margin-top: 15px; font-weight: 600; color: var(--primary-dark); }
+
         [contenteditable="true"]:hover { background: rgba(16, 185, 129, 0.05); border-radius: 4px; }
         [contenteditable="true"]:focus { outline: 2px solid var(--primary); background: #fff; }
 
@@ -84,7 +104,7 @@
         }
         .dept-nav button.active { background: var(--primary); color: white; border-color: var(--primary); }
 
-        /* ========== IMPROVED ACTION BAR ========== */
+        /* ========== ACTION BAR ========== */
         .action-bar { 
             display: flex; 
             justify-content: space-between; 
@@ -154,7 +174,7 @@
         /* ========== PRINT SETTINGS ========== */
         @media print {
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            #departmentButtons, .action-bar, .btn-delete, #loginPage, th:last-child, td:last-child, .tally-container, .help-btn, .notes-container, .bulk-fill-btn { 
+            #departmentButtons, .action-bar, .btn-delete, #loginPage, th:last-child, td:last-child, .tally-container, .help-btn, .notes-container, .bulk-fill-btn, #loadingOverlay { 
                 display: none !important; 
             }
             .logo-placeholder { visibility: hidden !important; height: 0 !important; }
@@ -201,6 +221,11 @@
     </style>
 </head>
 <body>
+
+<div id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Syncing Data...</div>
+</div>
 
 <div id="loginPage">
     <div id="loginBox">
@@ -313,11 +338,20 @@
 </div>
 
 <script>
+// !!! PASTE YOUR GOOGLE WEB APP URL HERE !!!
+const scriptURL = "https://script.google.com/macros/s/AKfycbyeBwLjia1PWCBMY4r7ATe5VC85h4PJL42XyZ3elrk7574aCJ3xPJL1a7q8JpSc2qCB/exec"; 
+
 const users = { eClaims:"1234", Nursing:"1234", Radiology:"1234", Laboratory:"1234", Pharmacy:"1234", Billing:"1234", Philhealth:"1234", Maintenance:"1234", Dietary:"1234", Malasakit:"1234", Security:"1234", Admin:"1234" };
 let currentDept="", currentDeptView="", scheduleData={};
 let departmentLogos = {}; 
 let globalSignatories = {};
 let departmentNotes = {};
+
+function showLoading(text) {
+    document.getElementById("loadingText").innerText = text;
+    document.getElementById("loadingOverlay").style.display = "flex";
+}
+function hideLoading() { document.getElementById("loadingOverlay").style.display = "none"; }
 
 function login(){
     const dept = document.getElementById("departmentSelect").value;
@@ -329,6 +363,7 @@ function login(){
         document.getElementById("deptHeader").innerText = dept;
         renderDeptButtons();
         updateWeekDisplay();
+        loadFromCloud(); // Try to sync upon login
     } else { alert("Invalid credentials"); }
 }
 
@@ -356,10 +391,7 @@ function renderDeptButtons(){
 }
 
 function handleLogo(input, side) {
-    if (currentDeptView !== currentDept) {
-        alert("You can only change logos for your own department!");
-        return;
-    }
+    if (currentDeptView !== currentDept) { alert("You can only change logos for your own department!"); return; }
     const file = input.files[0];
     if (file) {
         const reader = new FileReader();
@@ -403,10 +435,7 @@ function bulkFillRow(btn) {
     const firstShift = row.cells[1].querySelector('select').value;
     const selects = row.querySelectorAll('select');
     selects.forEach((sel, index) => {
-        if(index > 0) {
-            sel.value = firstShift;
-            setShiftColor(sel, sel.parentElement);
-        }
+        if(index > 0) { sel.value = firstShift; setShiftColor(sel, sel.parentElement); }
     });
     saveWeekData();
     updateTallies();
@@ -416,11 +445,9 @@ function clearWeekShifts() {
     if(currentDeptView !== currentDept) return;
     if(confirm("Are you sure you want to clear all shifts for this week? (Staff names will be kept)")) {
         document.querySelectorAll("#schedule tbody select").forEach(sel => {
-            sel.value = "";
-            setShiftColor(sel, sel.parentElement);
+            sel.value = ""; setShiftColor(sel, sel.parentElement);
         });
-        saveWeekData();
-        updateTallies();
+        saveWeekData(); updateTallies();
     }
 }
 
@@ -473,11 +500,9 @@ function addRow(data={}){
             const bulkBtn = document.createElement("button");
             bulkBtn.className = "bulk-fill-btn";
             bulkBtn.innerHTML = "⧉";
-            bulkBtn.title = "Copy shift to all days";
             bulkBtn.onclick = () => bulkFillRow(bulkBtn);
             td.appendChild(bulkBtn);
         }
-
         tr.appendChild(td);
     }
     
@@ -587,10 +612,11 @@ function exportExcel(){ XLSX.writeFile(XLSX.utils.table_to_book(document.getElem
 
 async function saveToLocalStorage() {
     saveWeekData();
+    showLoading("Saving & Syncing to Cloud...");
     const weekKey = currentSaturday.toDateString();
     const weekDisplay = document.getElementById("weekDisplay").innerText;
     
-    // 1. Save to Local Browser Memory
+    // Save to Local Memory
     const dataToSave = {
         schedule: scheduleData,
         logos: departmentLogos,
@@ -599,42 +625,62 @@ async function saveToLocalStorage() {
     };
     localStorage.setItem("LDH_Data_V3", JSON.stringify(dataToSave));
 
-    // 2. Prepare Data for Google Sheets
-    const scriptURL = "https://script.google.com/macros/s/AKfycbxvfa4e8J3F6IYxInbgtFJB5RQb1o0r9mSCyDwoDe4N1kGFA5mNmaczKSdTfis0Od7y/exec"; // <--- PASTE URL HERE
-
     const payload = {
         department: currentDeptView,
         week: weekDisplay,
         schedule: scheduleData[weekKey][currentDeptView]
     };
 
-    // 3. Send to Google Sheets
     try {
         await fetch(scriptURL, {
             method: "POST",
             mode: "no-cors", 
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
-        alert("Changes Saved! Data sent to Google Sheets.");
+        alert("Changes Saved! Data synced.");
     } catch (error) {
-        console.error("Error!", error.message);
-        alert("Saved locally, but could not connect to Google Sheets.");
+        alert("Saved locally, but cloud sync failed.");
+    } finally {
+        hideLoading();
     }
 }
 
-function loadFromLocalStorage() {
-    const saved = localStorage.getItem("LDH_Data_V3");
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        scheduleData = parsed.schedule || {};
-        departmentLogos = parsed.logos || {};
-        globalSignatories = parsed.signatories || {};
-        departmentNotes = parsed.notes || {};
+async function loadFromCloud() {
+    if(!scriptURL || scriptURL.includes("exec")) { // Check if URL is present
+        showLoading("Syncing Data...");
+        try {
+            const response = await fetch(scriptURL);
+            const cloudData = await response.json();
+            if (cloudData && cloudData.schedule) {
+                scheduleData = cloudData.schedule;
+                updateWeekDisplay();
+            }
+        } catch (e) {
+            console.log("Offline mode: Loading local data.");
+            const saved = localStorage.getItem("LDH_Data_V3");
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                scheduleData = parsed.schedule || {};
+                departmentLogos = parsed.logos || {};
+                globalSignatories = parsed.signatories || {};
+                departmentNotes = parsed.notes || {};
+                updateWeekDisplay();
+            }
+        } finally {
+            hideLoading();
+        }
     }
 }
 
-loadFromLocalStorage();
+// Initial Load logic
+const initialSave = localStorage.getItem("LDH_Data_V3");
+if (initialSave) {
+    const parsed = JSON.parse(initialSave);
+    scheduleData = parsed.schedule || {};
+    departmentLogos = parsed.logos || {};
+    globalSignatories = parsed.signatories || {};
+    departmentNotes = parsed.notes || {};
+}
 </script>
 </body>
 </html>
