@@ -339,7 +339,7 @@
 
 <script>
 // !!! PASTE YOUR GOOGLE WEB APP URL HERE !!!
-const scriptURL = "https://script.google.com/macros/s/AKfycbxPVeUtKmYpRCv-k4lz5mDzXTOMfUk0MmdBnJuy4xO-fAwUmB6KZFWio7Bere-xBoVU/exec"; 
+const scriptURL = "https://script.google.com/macros/s/AKfycbzDcIGGrqqI5bjq8RQXxVdE8YSiKL6xZxS6cbY6YUWiHxC0PVT0qkvWgOhNlINcioSB/exec"; 
 
 const users = { eClaims:"1234", Nursing:"1234", Radiology:"1234", Laboratory:"1234", Pharmacy:"1234", Billing:"1234", Philhealth:"1234", Maintenance:"1234", Dietary:"1234", Malasakit:"1234", Security:"1234", Admin:"1234" };
 let currentDept="", currentDeptView="", scheduleData={};
@@ -363,7 +363,7 @@ function login(){
         document.getElementById("deptHeader").innerText = dept;
         renderDeptButtons();
         updateWeekDisplay();
-        loadFromCloud(); // Try to sync upon login
+        loadFromCloud(); 
     } else { alert("Invalid credentials"); }
 }
 
@@ -443,7 +443,7 @@ function bulkFillRow(btn) {
 
 function clearWeekShifts() {
     if(currentDeptView !== currentDept) return;
-    if(confirm("Are you sure you want to clear all shifts for this week? (Staff names will be kept)")) {
+    if(confirm("Are you sure you want to clear all shifts for this week?")) {
         document.querySelectorAll("#schedule tbody select").forEach(sel => {
             sel.value = ""; setShiftColor(sel, sel.parentElement);
         });
@@ -452,17 +452,6 @@ function clearWeekShifts() {
 }
 
 function addRow(data={}){
-    if(!data.name && !data.shifts) {
-        let prevWeek = new Date(currentSaturday);
-        prevWeek.setDate(prevWeek.getDate() - 7);
-        let prevKey = prevWeek.toDateString();
-        let prevData = scheduleData[prevKey]?.[currentDeptView] || [];
-        let currentRowCount = document.querySelectorAll("#schedule tbody tr").length;
-        if(prevData[currentRowCount]) {
-            data = { name: prevData[currentRowCount].name, role: prevData[currentRowCount].role, shifts: prevData[currentRowCount].shifts };
-        }
-    }
-
     const tr=document.createElement("tr");
     const nameTd=document.createElement("td");
     
@@ -571,8 +560,9 @@ function loadWeekData(){
     const tbody=document.querySelector("#schedule tbody"); 
     tbody.innerHTML="";
     const weekKey = currentSaturday.toDateString();
-    const rows = (scheduleData[weekKey]?.[currentDeptView]||Array(5).fill({}));
-    rows.forEach(r=>addRow(r));
+    const rows = (scheduleData[weekKey]?.[currentDeptView]||[]);
+    if(rows.length === 0) { for(let i=0; i<5; i++) addRow({}); }
+    else { rows.forEach(r=>addRow(r)); }
 
     const isEditable = (currentDeptView === currentDept);
     document.getElementById("deptNotes").contentEditable = isEditable;
@@ -605,70 +595,63 @@ function goCurrentWeek(){
 }
 
 function showHelp() {
-    alert("LDH PORTAL GUIDE:\n1. Use 'Add Staff' to create rows.\n2. Click the square icon (⧉) to bulk-fill a row.\n3. Click 'Clear Shifts' to start fresh for the week while keeping names.");
+    alert("LDH PORTAL GUIDE:\n1. Use 'Add Staff' to create rows.\n2. Click the square icon (⧉) to bulk-fill a row.\n3. Click 'Save Changes' to sync to Cloud.");
 }
 
 function exportExcel(){ XLSX.writeFile(XLSX.utils.table_to_book(document.getElementById("schedule")),"Schedule.xlsx"); }
 
 async function saveToLocalStorage() {
     saveWeekData();
-    showLoading("Saving & Syncing to Cloud...");
-    const weekKey = currentSaturday.toDateString();
-    const weekDisplay = document.getElementById("weekDisplay").innerText;
+    showLoading("Syncing to Cloud...");
     
-    // Save to Local Memory
     const dataToSave = {
         schedule: scheduleData,
         logos: departmentLogos,
         signatories: globalSignatories,
         notes: departmentNotes
     };
+    
     localStorage.setItem("LDH_Data_V3", JSON.stringify(dataToSave));
 
-    const payload = {
-        department: currentDeptView,
-        week: weekDisplay,
-        schedule: scheduleData[weekKey][currentDeptView]
-    };
-
     try {
-        await fetch(scriptURL, {
+        const response = await fetch(scriptURL, {
             method: "POST",
-            mode: "no-cors", 
-            body: JSON.stringify(payload)
+            body: JSON.stringify(dataToSave)
         });
-        alert("Changes Saved! Data synced.");
+        const result = await response.text();
+        alert("Sync Complete: " + result);
     } catch (error) {
-        alert("Saved locally, but cloud sync failed.");
+        alert("Saved locally, but cloud sync failed. Check your internet.");
     } finally {
         hideLoading();
     }
 }
 
 async function loadFromCloud() {
-    if(!scriptURL || scriptURL.includes("exec")) { // Check if URL is present
-        showLoading("Syncing Data...");
-        try {
-            const response = await fetch(scriptURL);
-            const cloudData = await response.json();
-            if (cloudData && cloudData.schedule) {
-                scheduleData = cloudData.schedule;
-                updateWeekDisplay();
-            }
-        } catch (e) {
-            console.log("Offline mode: Loading local data.");
-            const saved = localStorage.getItem("LDH_Data_V3");
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                scheduleData = parsed.schedule || {};
-                departmentLogos = parsed.logos || {};
-                globalSignatories = parsed.signatories || {};
-                departmentNotes = parsed.notes || {};
-                updateWeekDisplay();
-            }
-        } finally {
-            hideLoading();
+    showLoading("Downloading Cloud Data...");
+    try {
+        const response = await fetch(scriptURL);
+        const cloudData = await response.json();
+        if (cloudData) {
+            scheduleData = cloudData.schedule || {};
+            departmentLogos = cloudData.logos || {};
+            globalSignatories = cloudData.signatories || {};
+            departmentNotes = cloudData.notes || {};
+            updateWeekDisplay();
         }
+    } catch (e) {
+        console.log("Cloud load failed, using local memory.");
+        const saved = localStorage.getItem("LDH_Data_V3");
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            scheduleData = parsed.schedule || {};
+            departmentLogos = parsed.logos || {};
+            globalSignatories = parsed.signatories || {};
+            departmentNotes = parsed.notes || {};
+            updateWeekDisplay();
+        }
+    } finally {
+        hideLoading();
     }
 }
 
@@ -684,4 +667,3 @@ if (initialSave) {
 </script>
 </body>
 </html>
-
