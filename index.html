@@ -245,7 +245,7 @@
             <option value="Security">Security</option>
             <option value="Admin">Admin</option>
         </select>
-        <input type="password" id="password" placeholder="Password" value="1234">
+        <input type="password" id="password" placeholder="Password">
         <button onclick="login()">Sign In</button>
     </div>
 </div>
@@ -289,6 +289,7 @@
         <div class="action-group">
             <button onclick="exportExcel()">Export</button>
             <button onclick="window.print()">Print PDF</button>
+            <button onclick="changePassword()" title="Change Password" style="color:var(--secondary);">🔑</button>
             <button onclick="logout()" style="color:var(--danger);">Logout</button>
         </div>
     </div>
@@ -338,10 +339,12 @@
 </div>
 
 <script>
-// !!! PASTE YOUR GOOGLE WEB APP URL HERE !!!
 const scriptURL = "https://script.google.com/macros/s/AKfycbzDcIGGrqqI5bjq8RQXxVdE8YSiKL6xZxS6cbY6YUWiHxC0PVT0qkvWgOhNlINcioSB/exec"; 
 
-const users = { eClaims:"1234", Nursing:"1234", Radiology:"1234", Laboratory:"1234", Pharmacy:"1234", Billing:"1234", Philhealth:"1234", Maintenance:"1234", Dietary:"1234", Malasakit:"1234", Security:"1234", Admin:"1234" };
+// Default passwords
+const defaultUsers = { eClaims:"1234", Nursing:"1234", Radiology:"1234", Laboratory:"1234", Pharmacy:"1234", Billing:"1234", Philhealth:"1234", Maintenance:"1234", Dietary:"1234", Malasakit:"1234", Security:"1234", Admin:"1234" };
+let customPasswords = {};
+
 let currentDept="", currentDeptView="", scheduleData={};
 let departmentLogos = {}; 
 let globalSignatories = {};
@@ -353,10 +356,15 @@ function showLoading(text) {
 }
 function hideLoading() { document.getElementById("loadingOverlay").style.display = "none"; }
 
+function getActivePassword(dept) {
+    return customPasswords[dept] || defaultUsers[dept];
+}
+
 function login(){
     const dept = document.getElementById("departmentSelect").value;
     const pass = document.getElementById("password").value;
-    if(users[dept] && users[dept] === pass){
+    
+    if(dept && pass === getActivePassword(dept)){
         currentDept = dept; currentDeptView = dept;
         document.getElementById("loginPage").style.display="none";
         document.getElementById("mainPage").style.display="block";
@@ -365,6 +373,19 @@ function login(){
         updateWeekDisplay();
         loadFromCloud(); 
     } else { alert("Invalid credentials"); }
+}
+
+async function changePassword() {
+    const newPass = prompt("Enter new password for " + currentDept + ":");
+    if (newPass && newPass.trim().length >= 4) {
+        if(confirm("Confirm password change for " + currentDept + "?")) {
+            customPasswords[currentDept] = newPass;
+            await saveToLocalStorage();
+            alert("Password updated and synced!");
+        }
+    } else if (newPass) {
+        alert("Password must be at least 4 characters.");
+    }
 }
 
 function logout(){ location.reload(); }
@@ -608,7 +629,8 @@ async function saveToLocalStorage() {
         schedule: scheduleData,
         logos: departmentLogos,
         signatories: globalSignatories,
-        notes: departmentNotes
+        notes: departmentNotes,
+        passwords: customPasswords // Passwords saved here
     };
     
     localStorage.setItem("LDH_Data_V3", JSON.stringify(dataToSave));
@@ -616,13 +638,12 @@ async function saveToLocalStorage() {
     try {
         const response = await fetch(scriptURL, {
             method: "POST",
-            mode: "no-cors", // Keep this if you have CORS issues, but remove it if you want the "Saved" alert to be 100% accurate
+            mode: "no-cors",
             body: JSON.stringify(dataToSave)
         });
-        const result = await response.text();
-        alert("Sync Complete: " + result);
+        alert("Sync Complete!");
     } catch (error) {
-        alert("Saved locally, but cloud sync failed. Check your internet.");
+        alert("Saved locally, but cloud sync failed.");
     } finally {
         hideLoading();
     }
@@ -631,29 +652,24 @@ async function saveToLocalStorage() {
 async function loadFromCloud() {
     showLoading("Downloading Cloud Data...");
     try {
-        // We add a timestamp to the URL to prevent the browser from loading an "old" version
         const cacheBuster = "?cb=" + new Date().getTime();
         const response = await fetch(scriptURL + cacheBuster);
         const cloudData = await response.json();
         
         if (cloudData && Object.keys(cloudData).length > 0) {
-            // Success! Update our local variables with cloud data
             scheduleData = cloudData.schedule || {};
             departmentLogos = cloudData.logos || {};
             globalSignatories = cloudData.signatories || {};
             departmentNotes = cloudData.notes || {};
+            customPasswords = cloudData.passwords || {}; // Load passwords
             
-            // Save to local storage as a backup
             localStorage.setItem("LDH_Data_V3", JSON.stringify(cloudData));
-            
             updateWeekDisplay();
-            console.log("Cloud data loaded successfully");
+            loadLogos();
         } else {
-            console.log("Cloud is empty, using local backup.");
             loadFromLocal();
         }
     } catch (e) {
-        console.error("Cloud load failed:", e);
         loadFromLocal();
     } finally {
         hideLoading();
@@ -668,25 +684,16 @@ function loadFromLocal() {
         departmentLogos = parsed.logos || {};
         globalSignatories = parsed.signatories || {};
         departmentNotes = parsed.notes || {};
+        customPasswords = parsed.passwords || {};
         updateWeekDisplay();
+        loadLogos();
     }
 }
 
-// NEW INITIAL LOAD LOGIC
-// This runs once when the page first opens
 async function initializeApp() {
-    const localData = localStorage.getItem("LDH_Data_V3");
-    if (localData) {
-        const parsed = JSON.parse(localData);
-        scheduleData = parsed.schedule || {};
-        departmentLogos = parsed.logos || {};
-        globalSignatories = parsed.signatories || {};
-        departmentNotes = parsed.notes || {};
-        // Show local data immediately so the page isn't blank
-        if(currentDeptView) updateWeekDisplay(); 
-    }
+    // We attempt a cloud load on start to get latest passwords
+    await loadFromCloud();
 }
-// Start the app
 initializeApp();
 </script>
 </body>
