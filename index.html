@@ -616,6 +616,7 @@ async function saveToLocalStorage() {
     try {
         const response = await fetch(scriptURL, {
             method: "POST",
+            mode: "no-cors", // Keep this if you have CORS issues, but remove it if you want the "Saved" alert to be 100% accurate
             body: JSON.stringify(dataToSave)
         });
         const result = await response.text();
@@ -630,40 +631,63 @@ async function saveToLocalStorage() {
 async function loadFromCloud() {
     showLoading("Downloading Cloud Data...");
     try {
-        const response = await fetch(scriptURL);
+        // We add a timestamp to the URL to prevent the browser from loading an "old" version
+        const cacheBuster = "?cb=" + new Date().getTime();
+        const response = await fetch(scriptURL + cacheBuster);
         const cloudData = await response.json();
-        if (cloudData) {
+        
+        if (cloudData && Object.keys(cloudData).length > 0) {
+            // Success! Update our local variables with cloud data
             scheduleData = cloudData.schedule || {};
             departmentLogos = cloudData.logos || {};
             globalSignatories = cloudData.signatories || {};
             departmentNotes = cloudData.notes || {};
+            
+            // Save to local storage as a backup
+            localStorage.setItem("LDH_Data_V3", JSON.stringify(cloudData));
+            
             updateWeekDisplay();
+            console.log("Cloud data loaded successfully");
+        } else {
+            console.log("Cloud is empty, using local backup.");
+            loadFromLocal();
         }
     } catch (e) {
-        console.log("Cloud load failed, using local memory.");
-        const saved = localStorage.getItem("LDH_Data_V3");
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            scheduleData = parsed.schedule || {};
-            departmentLogos = parsed.logos || {};
-            globalSignatories = parsed.signatories || {};
-            departmentNotes = parsed.notes || {};
-            updateWeekDisplay();
-        }
+        console.error("Cloud load failed:", e);
+        loadFromLocal();
     } finally {
         hideLoading();
     }
 }
 
-// Initial Load logic
-const initialSave = localStorage.getItem("LDH_Data_V3");
-if (initialSave) {
-    const parsed = JSON.parse(initialSave);
-    scheduleData = parsed.schedule || {};
-    departmentLogos = parsed.logos || {};
-    globalSignatories = parsed.signatories || {};
-    departmentNotes = parsed.notes || {};
+function loadFromLocal() {
+    const saved = localStorage.getItem("LDH_Data_V3");
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        scheduleData = parsed.schedule || {};
+        departmentLogos = parsed.logos || {};
+        globalSignatories = parsed.signatories || {};
+        departmentNotes = parsed.notes || {};
+        updateWeekDisplay();
+    }
 }
+
+// NEW INITIAL LOAD LOGIC
+// This runs once when the page first opens
+async function initializeApp() {
+    const localData = localStorage.getItem("LDH_Data_V3");
+    if (localData) {
+        const parsed = JSON.parse(localData);
+        scheduleData = parsed.schedule || {};
+        departmentLogos = parsed.logos || {};
+        globalSignatories = parsed.signatories || {};
+        departmentNotes = parsed.notes || {};
+        // Show local data immediately so the page isn't blank
+        if(currentDeptView) updateWeekDisplay(); 
+    }
+}
+// Start the app
+initializeApp();
 </script>
 </body>
 </html>
