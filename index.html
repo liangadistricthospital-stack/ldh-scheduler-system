@@ -177,14 +177,30 @@
             #departmentButtons, .action-bar, .btn-delete, #loginPage, th:last-child, td:last-child, .tally-container, .help-btn, .notes-container, .bulk-fill-btn, #loadingOverlay { 
                 display: none !important; 
             }
-            .logo-placeholder { visibility: hidden !important; height: 0 !important; }
-            .logo-container img { display: block !important; max-height: 80px !important; }
-            .logo-container { height: 80px !important; width: 80px !important; border: none !important; }
+            
+            /* Enhanced Logo Print Support */
+            .logo-placeholder { display: none !important; }
+            .logo-container { 
+                border: none !important; 
+                height: 100px !important; 
+                width: 100px !important; 
+                display: block !important;
+                visibility: visible !important;
+            }
+            .logo-container img { 
+                display: block !important; 
+                max-height: 100px !important; 
+                max-width: 100px !important;
+                visibility: visible !important;
+            }
 
             @page { size: landscape; margin: 8mm; }
             body { background: white !important; padding: 0; margin: 0; font-size: 10pt; color: black !important; }
             
             .header-box { 
+                display: flex !important;
+                flex-direction: row !important;
+                justify-content: space-between !important;
                 margin-bottom: 10px !important; 
                 padding: 10px 20px !important; 
                 box-shadow: none !important;
@@ -438,8 +454,22 @@ function loadLogos() {
     const leftDisplay = document.getElementById("logoLeftDisplay");
     const rightDisplay = document.getElementById("logoRightDisplay");
     const logos = departmentLogos[currentDeptView] || {};
-    leftDisplay.innerHTML = logos.left ? `<img src="${logos.left}">` : "Upload<br>Logo";
-    rightDisplay.innerHTML = logos.right ? `<img src="${logos.right}">` : "Upload<br>Logo";
+    
+    if (logos.left) {
+        leftDisplay.innerHTML = `<img src="${logos.left}" style="width:100%; height:100%; object-fit:contain;">`;
+        leftDisplay.classList.remove('logo-placeholder');
+    } else {
+        leftDisplay.innerHTML = "Upload<br>Logo";
+        leftDisplay.classList.add('logo-placeholder');
+    }
+
+    if (logos.right) {
+        rightDisplay.innerHTML = `<img src="${logos.right}" style="width:100%; height:100%; object-fit:contain;">`;
+        rightDisplay.classList.remove('logo-placeholder');
+    } else {
+        rightDisplay.innerHTML = "Upload<br>Logo";
+        rightDisplay.classList.add('logo-placeholder');
+    }
 }
 
 let currentSaturday=new Date(); 
