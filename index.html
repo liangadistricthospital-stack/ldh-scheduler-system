@@ -289,7 +289,7 @@
         <div class="action-group">
             <button onclick="exportExcel()">Export</button>
             <button onclick="window.print()">Print PDF</button>
-            <button onclick="changePassword()" title="Change Password" style="color:var(--secondary);">🔑</button>
+            <button onclick="changePassword()" title="Change Password" style="color:var(--secondary); font-weight: bold;">🔑 Reset Pass</button>
             <button onclick="logout()" style="color:var(--danger);">Logout</button>
         </div>
     </div>
@@ -376,10 +376,19 @@ function login(){
 }
 
 async function changePassword() {
-    const newPass = prompt("Enter new password for " + currentDept + ":");
+    let targetDept = currentDept;
+    
+    // Admin Override Logic
+    if (currentDept === "Admin") {
+        const choice = prompt("ADMIN MODE: Enter the Department name to reset password for (e.g., Nursing, eClaims, Admin):");
+        if (!choice) return;
+        targetDept = choice;
+    }
+
+    const newPass = prompt("Enter new password for " + targetDept + ":");
     if (newPass && newPass.trim().length >= 4) {
-        if(confirm("Confirm password change for " + currentDept + "?")) {
-            customPasswords[currentDept] = newPass;
+        if(confirm("Confirm password change for " + targetDept + "?")) {
+            customPasswords[targetDept] = newPass;
             await saveToLocalStorage();
             alert("Password updated and synced!");
         }
